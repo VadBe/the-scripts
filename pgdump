@@ -1,0 +1,28 @@
+#!/bin/sh
+
+. ./.env
+
+DUMPS_DIR=./dump
+DUMPS_LIMIT=2
+
+if [ ! -d "$DUMPS_DIR" ]; then
+  mkdir $DUMPS_DIR
+fi
+
+if [ "$1" = "import" ]; then
+  docker compose exec -T $DB_HOST psql -U $DB_USERNAME -d $DB_DATABASE < $DUMPS_DIR/$DB_DATABASE.latest.sql
+elif [ "$1" = "export" ]; then
+  DUMPS_STORED=$((`ls $DUMPS_DIR/$DB_DATABASE.*.sql | wc -l`))
+
+  if [ $DUMPS_STORED -gt $DUMPS_LIMIT ]; then
+    ls -t $DUMPS_DIR/$DB_DATABASE.*.sql | tail --lines=+$(expr $DUMPS_LIMIT + 1) | xargs -d '\n' rm
+  fi
+
+  if [ -f "$DUMPS_DIR/$DB_DATABASE.latest.sql" ]; then
+    EPOCH=$(stat -c '%W' $DUMPS_DIR/$DB_DATABASE.latest.sql)
+    mv $DUMPS_DIR/$DB_DATABASE.latest.sql $DUMPS_DIR/$DB_DATABASE.$EPOCH.sql
+  fi
+
+  docker compose exec -T $DB_HOST pg_dump -U $DB_USERNAME -d $DB_DATABASE -c --inserts --no-comments --if-exists --blobs > $DUMPS_DIR/$DB_DATABASE.latest.sql 
+
+fi

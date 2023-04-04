@@ -1,0 +1,44 @@
+#!/bin/sh
+
+. ./.env
+
+DUMPS_DIR=./dump
+DUMPS_LIMIT=1
+LATEST_DUMP_PATH=$DUMPS_DIR/$DB_DATABASE.latest.sql
+DB_USERNAME=root
+
+if [ ! -d "$DUMPS_DIR" ]; then
+  mkdir $DUMPS_DIR
+fi
+
+if [ "$1" = "import" ]; then
+
+  # Check latest dump existence
+  if [ ! -f "$LATEST_DUMP_PATH" ]; then
+    echo "$LATEST_DUMP_PATH not found"
+    exit 0
+  fi
+
+  # Import latest dump
+  docker compose exec -T $DB_HOST mysql --user=$DB_USERNAME --password=$DB_ROOT_PASSWORD $DB_DATABASE < $LATEST_DUMP_PATH
+
+elif [ "$1" = "export" ]; then
+
+  # Count stored dumps
+  DUMPS_STORED=$((`ls $DUMPS_DIR/$DB_DATABASE.*.sql | wc -l`))
+
+  # Remove oldest dumps
+  if [ $DUMPS_STORED -gt $DUMPS_LIMIT ]; then
+    ls -t $DUMPS_DIR/$DB_DATABASE.*.sql | tail --lines=+$(expr $DUMPS_LIMIT + 1) | xargs -d '\n' rm
+  fi
+
+  # Rename latest dump to timestamp
+  if [ -f "$LATEST_DUMP_PATH" ]; then
+  EPOCH=$(stat -c '%W' $LATEST_DUMP_PATH)
+    mv $LATEST_DUMP_PATH $DUMPS_DIR/$DB_DATABASE.$EPOCH.sql
+  fi
+
+  # Create new dump
+  docker compose exec -T $DB_HOST mysqldump --user=$DB_USERNAME --password=$DB_ROOT_PASSWORD --complete-insert --add-drop-table $DB_DATABASE > $LATEST_DUMP_PATH
+
+fi
